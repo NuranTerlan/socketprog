@@ -1,16 +1,16 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Sun.Extensions;
 
 namespace Sun
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             Console.Title = "Listener (Sun)";
-            Thread.Sleep(300);
-            SocketListener.Start();
+            await SocketListener.StartAsync();
         }
     }
 }
