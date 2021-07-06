@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Sun.Extensions
 {
@@ -16,8 +18,8 @@ namespace Sun.Extensions
             IpAddress = host.AddressList[0];
             LocalEndPoint = new IPEndPoint(IpAddress, 2002);
         }
-        
-        public static void Start()
+
+        public static async Task StartAsync()
         {
             try
             {
@@ -27,21 +29,14 @@ namespace Sun.Extensions
                 listener.Listen(1);
 
                 Console.WriteLine("Waiting for a connection.. (listener/" + LocalEndPoint + ')');
-                using var handler = listener.Accept();
+                using var handler = await listener.AcceptAsync();
                 Console.WriteLine("Connection established with: client/" + handler.RemoteEndPoint + '\n');
-                
-                while (true)
+                var processesList = new List<Task>
                 {
-                    var bytes = new byte[handler.ReceiveBufferSize];
-                    var bytesReceived = handler.Receive(bytes);
-                    var data = Encoding.ASCII.GetString(bytes, 0, bytesReceived);
-                    WriteReceived(data + $" (from client/{handler.RemoteEndPoint})");
-                    var sentMessage = $"Thanks for the message! ({data})";
-                    var sentMessageBytes = Encoding.ASCII.GetBytes(sentMessage);
-                    handler.Send(sentMessageBytes);
-                    WriteSent(sentMessage);
-                    Console.WriteLine();
-                }
+                    {Task.Run(async () => await SendMessageAsync(handler))},
+                    {Task.Run(async () => await ReceiveMessageAsync(handler))}
+                };
+                Task.WaitAll(processesList.ToArray());
             }
             catch (Exception e)
             {
@@ -51,21 +46,71 @@ namespace Sun.Extensions
                 throw;
             }
         }
+
+        private static async Task ReceiveMessageAsync(Socket handler)
+        {
+            while (true)
+            {
+                var bytes = new byte[handler.ReceiveBufferSize];
+                var bytesReceived = await handler.ReceiveAsync(new ArraySegment<byte>(bytes), SocketFlags.None);
+                var data = Encoding.ASCII.GetString(bytes, 0, bytesReceived);
+                ClearCurrentConsoleLine();
+                WriteReceived(data, handler.RemoteEndPoint);
+                AskForNewMessage();
+            }
+        }
+
+        private static async Task SendMessageAsync(Socket handler)
+        {
+            while (true)
+            {
+                AskForNewMessage();
+                var message = Console.ReadLine() ?? "Default Message";
+                if (message.Length == 0) ShowErrorMessage("At least one character required to send a message!");
+                var trimmedMsg = message.Trim();
+                var msgBytes = Encoding.ASCII.GetBytes(trimmedMsg);
+                await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
+                WriteSent(trimmedMsg, handler.RemoteEndPoint);
+            }
+        }
+
+        private static void AskForNewMessage()
+        {
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.Write("Write your message: ");
+            Console.ResetColor();
+        }
         
-        private static void WriteSent(string content)
+        private static void WriteSent(string content, EndPoint to)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Write("\tSENT: ");
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"SENT (--> {to}): ");
+            Console.ResetColor();
             Console.WriteLine(content);
         }
 
-        private static void WriteReceived(string content)
+        private static void WriteReceived(string content, EndPoint from)
         {
             Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write("\tRECEIVED: ");
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"RECEIVED (<-- {from}): ");
+            Console.ResetColor();
             Console.WriteLine(content);
+        }
+
+        private static void ClearCurrentConsoleLine()
+        {
+            var currentLineCursor = Console.CursorTop;
+            Console.SetCursorPosition(0, Console.CursorTop);
+            Console.Write(new string(' ', Console.WindowWidth)); 
+            Console.SetCursorPosition(0, currentLineCursor);
+        }
+        
+        private static void ShowErrorMessage(string e)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write($"ERROR: ");
+            Console.ResetColor();
+            Console.WriteLine(e);
         }
     }
 }
