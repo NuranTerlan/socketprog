@@ -54,7 +54,6 @@ namespace Sun.Extensions
                 var bytes = new byte[handler.ReceiveBufferSize];
                 var bytesReceived = await handler.ReceiveAsync(new ArraySegment<byte>(bytes), SocketFlags.None);
                 var data = Encoding.ASCII.GetString(bytes, 0, bytesReceived);
-                ClearCurrentConsoleLine();
                 WriteReceived(data, handler.RemoteEndPoint);
                 AskForNewMessage();
             }
@@ -64,8 +63,7 @@ namespace Sun.Extensions
         {
             while (true)
             {
-                AskForNewMessage();
-                var message = Console.ReadLine() ?? "Default Message";
+                var message = ReturnNewMessage();
                 if (message.Length == 0) ShowErrorMessage("At least one character required to send a message!");
                 var trimmedMsg = message.Trim();
                 var msgBytes = Encoding.ASCII.GetBytes(trimmedMsg);
@@ -81,6 +79,15 @@ namespace Sun.Extensions
             Console.ResetColor();
         }
         
+        private static string ReturnNewMessage()
+        {
+            AskForNewMessage();
+            var message = Console.ReadLine() ?? "Default Message";
+            Console.SetCursorPosition(0, Console.GetCursorPosition().Top - 1);
+            ClearCurrentConsoleLine();
+            return message;
+        }
+        
         private static void WriteSent(string content, EndPoint to)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
@@ -91,6 +98,7 @@ namespace Sun.Extensions
 
         private static void WriteReceived(string content, EndPoint from)
         {
+            ClearCurrentConsoleLine();
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write($"RECEIVED (<-- {from}): ");
             Console.ResetColor();
