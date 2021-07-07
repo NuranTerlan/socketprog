@@ -58,7 +58,6 @@ namespace Earth.Extensions
                 var bytes = new byte[sender.ReceiveBufferSize];
                 var bytesReceived = await sender.ReceiveAsync(new ArraySegment<byte>(bytes), SocketFlags.None);
                 var data = Encoding.ASCII.GetString(bytes, 0, bytesReceived);
-                ClearCurrentConsoleLine();
                 WriteReceived(data);
                 AskForNewMessage();
             }
@@ -68,8 +67,7 @@ namespace Earth.Extensions
         {
             while (true)
             {
-                AskForNewMessage();
-                var message = Console.ReadLine() ?? "Default message";
+                var message = ReturnNewMessage();
                 if (message.Length == 0) ShowErrorMessage("At least one character required to send a message!");
                 var trimmedMsg = message.Trim();
                 var msgBytes = Encoding.ASCII.GetBytes(trimmedMsg);
@@ -84,6 +82,15 @@ namespace Earth.Extensions
             Console.Write("Write your message: ");
             Console.ResetColor();
         }
+        
+        private static string ReturnNewMessage()
+        {
+            AskForNewMessage();
+            var message = Console.ReadLine() ?? "Default Message";
+            Console.SetCursorPosition(0, Console.GetCursorPosition().Top - 1);
+            ClearCurrentConsoleLine();
+            return message;
+        }
 
         private static void WriteSent(string content)
         {
@@ -95,6 +102,7 @@ namespace Earth.Extensions
 
         private static void WriteReceived(string content)
         {
+            ClearCurrentConsoleLine();
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write($"RECEIVED (<-- {RemoteEndPoint}): ");
             Console.ForegroundColor = ConsoleColor.White;
