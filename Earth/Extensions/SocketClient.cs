@@ -67,16 +67,15 @@ namespace Earth.Extensions
         {
             while (true)
             {
-                var message = ReturnNewMessage();
+                var message = ReturnNewMessage().Trim();
                 if (message.Length == 0)
                 {
                     ShowErrorMessage("At least one character required to send a message!");
                     continue;
                 }
-                var trimmedMsg = message.Trim();
-                var msgBytes = Encoding.ASCII.GetBytes(trimmedMsg);
+                var msgBytes = Encoding.ASCII.GetBytes(message);
                 await sender.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
-                WriteSent(trimmedMsg);
+                WriteSent(message);
             }
         }
         
