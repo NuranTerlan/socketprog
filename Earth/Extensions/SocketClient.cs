@@ -3,36 +3,35 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Earth.Extensions
 {
-    public static class SocketClient
+    public class SocketClient
     {
-        private static readonly IPAddress IpAddress;
-        private static readonly IPEndPoint RemoteEndPoint;
-        private static readonly IPEndPoint LocalEndPoint;
+        private readonly IPAddress _ipAddress;
+        private readonly IPEndPoint _remoteEndPoint;
+        private readonly IPEndPoint _localEndPoint;
 
-        static SocketClient()
+        public SocketClient(int port)
         {
             var host = Dns.GetHostEntry("localhost");
-            IpAddress = host.AddressList[0];
-            RemoteEndPoint = new IPEndPoint(IpAddress, 2002);
-            LocalEndPoint = new IPEndPoint(IpAddress, 1918);
+            _ipAddress = host.AddressList[0];
+            _remoteEndPoint = new IPEndPoint(_ipAddress, 2002);
+            _localEndPoint = new IPEndPoint(_ipAddress, port);
         }
 
-        public static async Task SendMessageAsync()
+        public async Task SendMessageAsync()
         {
             try
             {
-                using var sender = new Socket(IpAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                sender.Bind(LocalEndPoint);
-                await sender.ConnectAsync(RemoteEndPoint);
+                using var sender = new Socket(_ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                sender.Bind(_localEndPoint);
+                await sender.ConnectAsync(_remoteEndPoint);
 
                 if (sender.Connected)
                 {
-                    Console.WriteLine($"Connected to Sun on {RemoteEndPoint} (Socket-Listener)..\n");
+                    Console.WriteLine($"Connected to Sun on {_remoteEndPoint} (Socket-Listener)..\n");
                 }
                 
                 var processesList = new List<Task>
@@ -51,7 +50,7 @@ namespace Earth.Extensions
             }
         }
 
-        private static async Task ReceiveMessageAsync(Socket sender)
+        private async Task ReceiveMessageAsync(Socket sender)
         {
             while (true)
             {
@@ -63,7 +62,7 @@ namespace Earth.Extensions
             }
         }
         
-        private static async Task SendMessageAsync(Socket sender)
+        private async Task SendMessageAsync(Socket sender)
         {
             while (true)
             {
@@ -79,14 +78,14 @@ namespace Earth.Extensions
             }
         }
         
-        private static void AskForNewMessage()
+        private void AskForNewMessage()
         {
             Console.ForegroundColor = ConsoleColor.Magenta;
             Console.Write("Write your message: ");
             Console.ResetColor();
         }
         
-        private static string ReturnNewMessage()
+        private string ReturnNewMessage()
         {
             AskForNewMessage();
             var message = Console.ReadLine() ?? "Default Message";
@@ -95,24 +94,24 @@ namespace Earth.Extensions
             return message;
         }
 
-        private static void WriteSent(string content)
+        private void WriteSent(string content)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Write($"SENT (--> {RemoteEndPoint}): ");
+            Console.Write($"SENT (--> {_remoteEndPoint}): ");
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine(content);
         }
 
-        private static void WriteReceived(string content)
+        private void WriteReceived(string content)
         {
             ClearCurrentConsoleLine();
             Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write($"RECEIVED (<-- {RemoteEndPoint}): ");
+            Console.Write($"RECEIVED (<-- {_remoteEndPoint}): ");
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine(content);
         }
         
-        private static void ClearCurrentConsoleLine()
+        private void ClearCurrentConsoleLine()
         {
             var currentLineCursor = Console.CursorTop;
             Console.SetCursorPosition(0, Console.CursorTop);
@@ -120,7 +119,7 @@ namespace Earth.Extensions
             Console.SetCursorPosition(0, currentLineCursor);
         }
 
-        private static void ShowErrorMessage(string e)
+        private void ShowErrorMessage(string e)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.Write($"ERROR: ");
