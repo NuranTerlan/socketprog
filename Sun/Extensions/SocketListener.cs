@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,12 +13,14 @@ namespace Sun.Extensions
     {
         private static readonly IPAddress IpAddress;
         private static readonly IPEndPoint LocalEndPoint;
+        private static readonly Dictionary<string, Socket> Connections;
 
         static SocketListener()
         {
             var host = Dns.GetHostEntry("localhost");
             IpAddress = host.AddressList[0];
             LocalEndPoint = new IPEndPoint(IpAddress, 2002);
+            Connections = new Dictionary<string, Socket>();
         }
 
         public static async Task StartAsync()
@@ -26,17 +30,25 @@ namespace Sun.Extensions
                 using var listener = new Socket(IpAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 listener.Bind(LocalEndPoint);
                 // make this listener synchronous deliberately
-                listener.Listen(1);
+                listener.Listen(20);
 
-                Console.WriteLine("Waiting for a connection.. (listener/" + LocalEndPoint + ')');
-                using var handler = await listener.AcceptAsync();
-                Console.WriteLine("Connection established with: client/" + handler.RemoteEndPoint + '\n');
-                var processesList = new List<Task>
+                Console.WriteLine("Waiting for a connection.. (listener/" + LocalEndPoint + ")\n");
+                var counter = 1;
+                while (true)
                 {
-                    {Task.Run(async () => await SendMessageAsync(handler))},
-                    {Task.Run(async () => await ReceiveMessageAsync(handler))}
-                };
-                Task.WaitAll(processesList.ToArray());
+                    var handler = await listener.AcceptAsync();
+                    Connections.Add("connection" + counter++, handler);
+                    ClearCurrentConsoleLine();
+                    Console.WriteLine("Connection established with: client/" + handler.RemoteEndPoint);
+                    Task.Run(async () => await ReceiveMessageAsync(handler));
+                    Task.Run(async () => await SendMessageAsync());
+
+                    // Console.Write("Connect to => (");
+                    // Console.Write(string.Join(",", Connections.Keys));
+                    // Console.Write(")(type exact same): ");
+                    // var connectionName = Console.ReadLine();
+                    // await HandleConnection(Connections[connectionName ?? string.Empty]);
+                }
             }
             catch (Exception e)
             {
@@ -55,6 +67,19 @@ namespace Sun.Extensions
                 var bytesReceived = await handler.ReceiveAsync(new ArraySegment<byte>(bytes), SocketFlags.None);
                 var data = Encoding.ASCII.GetString(bytes, 0, bytesReceived);
                 WriteReceived(data, handler.RemoteEndPoint);
+                if (Connections.ContainsKey(data.Split()[^1]))
+                {
+                    await SendDirectMessageAsync(data);
+                }
+
+                if (data.Split()[^1].Equals("@all"))
+                {
+                    var message = GenerateMessageWithBlocks(data.Split());
+                    var currentConnectionName =
+                        Connections.FirstOrDefault(s => s.Value.RemoteEndPoint == handler.RemoteEndPoint).Key;
+                    await SendMessageToEveryOneExceptAsync(message, currentConnectionName);
+                }
+
                 AskForNewMessage();
             }
         }
@@ -69,10 +94,61 @@ namespace Sun.Extensions
                     ShowErrorMessage("At least one character required to send a message!");
                     continue;
                 }
+
                 var msgBytes = Encoding.ASCII.GetBytes(message);
                 await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
                 WriteSent(message, handler.RemoteEndPoint);
             }
+        }
+
+        private static async Task SendMessageAsync()
+        {
+            while (true)
+            {
+                var text = ReturnNewMessage().Trim();
+                if (text.Length == 0)
+                {
+                    ShowErrorMessage("At least one character required to send a message!");
+                    continue;
+                }
+
+                if (Connections.ContainsKey(text.Split()[^1]))
+                {
+                    await SendDirectMessageAsync(text);
+                    continue;
+                }
+
+                await SendMessageToEveryOneAsync(text);
+            }
+        }
+
+        private static async Task SendMessageToEveryOneAsync(string message)
+        {
+            var msgBytes = Encoding.ASCII.GetBytes(message);
+            foreach (var handler in Connections.Values)
+            {
+                await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
+                WriteSent(message, handler.RemoteEndPoint);
+            }
+        }
+
+        private static async Task SendMessageToEveryOneExceptAsync(string message, string exceptConnection)
+        {
+            var msgBytes = Encoding.ASCII.GetBytes(message);
+            foreach (var handlerName in Connections.Keys.Where(n => !n.Equals(exceptConnection)))
+            {
+                var handler = Connections[handlerName];
+                await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
+                WriteSent(message, handler.RemoteEndPoint);
+            }
+        }
+
+        private static async Task SendDirectMessageAsync(string text)
+        {
+            var (handler, message) = GetHandlerMessageFromText(text);
+            var msgBytes = Encoding.ASCII.GetBytes(message);
+            await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
+            WriteSent(message, handler.RemoteEndPoint);
         }
 
         private static void AskForNewMessage()
@@ -81,7 +157,7 @@ namespace Sun.Extensions
             Console.Write("Write your message: ");
             Console.ResetColor();
         }
-        
+
         private static string ReturnNewMessage()
         {
             AskForNewMessage();
@@ -90,7 +166,20 @@ namespace Sun.Extensions
             ClearCurrentConsoleLine();
             return message;
         }
-        
+
+        private static Tuple<Socket, string> GetHandlerMessageFromText(string text)
+        {
+            var textBlocks = text.Split();
+            var handler = Connections[textBlocks[^1]];
+            var message = GenerateMessageWithBlocks(textBlocks);
+            return Tuple.Create(handler, message);
+        }
+
+        private static string GenerateMessageWithBlocks(IReadOnlyCollection<string> blocks)
+        {
+            return string.Join(' ', blocks.Take(blocks.Count - 1));
+        }
+
         private static void WriteSent(string content, EndPoint to)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
@@ -112,10 +201,10 @@ namespace Sun.Extensions
         {
             var currentLineCursor = Console.CursorTop;
             Console.SetCursorPosition(0, Console.CursorTop);
-            Console.Write(new string(' ', Console.WindowWidth)); 
+            Console.Write(new string(' ', Console.WindowWidth));
             Console.SetCursorPosition(0, currentLineCursor);
         }
-        
+
         private static void ShowErrorMessage(string e)
         {
             Console.ForegroundColor = ConsoleColor.Red;
