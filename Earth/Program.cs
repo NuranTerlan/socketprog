@@ -14,7 +14,7 @@ namespace Earth
             Console.Write("Port of instance: ");
             var port = int.Parse(Console.ReadLine() ?? "1918");
             var client = new SocketClient(port);
-            await client.SendMessageAsync();
+            await client.StartClient();
         }
     }
 }
