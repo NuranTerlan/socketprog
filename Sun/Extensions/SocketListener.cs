@@ -27,7 +27,7 @@ namespace Sun.Extensions
         {
             try
             {
-                using var listener = new Socket(IpAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                var listener = new Socket(IpAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 listener.Bind(LocalEndPoint);
                 // make this listener synchronous deliberately
                 listener.Listen(20);
@@ -37,9 +37,15 @@ namespace Sun.Extensions
                 while (true)
                 {
                     var handler = await listener.AcceptAsync();
-                    Connections.Add("connection" + counter++, handler);
+                    if (!Connections.Values.Select(client => client.RemoteEndPoint)
+                        .Contains(handler.RemoteEndPoint))
+                    {
+                        Connections.Add("connection" + counter++, handler);
+                    }
+
                     ClearCurrentConsoleLine();
                     Console.WriteLine("Connection established with: client/" + handler.RemoteEndPoint);
+
                     Task.Run(async () => await ReceiveMessageAsync(handler));
                     Task.Run(async () => await SendMessageAsync());
 
@@ -63,10 +69,12 @@ namespace Sun.Extensions
         {
             while (true)
             {
-                var bytes = new byte[handler.ReceiveBufferSize];
+                if (!IsConnected(handler)) continue;
+                var bytes = new byte[128];
                 var bytesReceived = await handler.ReceiveAsync(new ArraySegment<byte>(bytes), SocketFlags.None);
                 var data = Encoding.ASCII.GetString(bytes, 0, bytesReceived);
                 WriteReceived(data, handler.RemoteEndPoint);
+
                 if (Connections.ContainsKey(data.Split()[^1]))
                 {
                     await SendDirectMessageAsync(data);
@@ -127,8 +135,10 @@ namespace Sun.Extensions
             var msgBytes = Encoding.ASCII.GetBytes(message);
             foreach (var handler in Connections.Values)
             {
+                if (!handler.Connected) await handler.ConnectAsync(LocalEndPoint);
                 await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
                 WriteSent(message, handler.RemoteEndPoint);
+                // handler.Disconnect(true);
             }
         }
 
@@ -138,17 +148,33 @@ namespace Sun.Extensions
             foreach (var handlerName in Connections.Keys.Where(n => !n.Equals(exceptConnection)))
             {
                 var handler = Connections[handlerName];
+                if (!handler.Connected) await handler.ConnectAsync(LocalEndPoint);
                 await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
                 WriteSent(message, handler.RemoteEndPoint);
+                // handler.Disconnect(true);
             }
         }
 
         private static async Task SendDirectMessageAsync(string text)
         {
             var (handler, message) = GetHandlerMessageFromText(text);
+            if (!handler.Connected) await handler.ConnectAsync(LocalEndPoint);
             var msgBytes = Encoding.ASCII.GetBytes(message);
             await handler.SendAsync(new ArraySegment<byte>(msgBytes), SocketFlags.None);
             WriteSent(message, handler.RemoteEndPoint);
+            // handler.Disconnect(true);
+        }
+
+        private static bool IsConnected(Socket socket)
+        {
+            try
+            {
+                return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
+            }
+            catch (SocketException)
+            {
+                return false;
+            }
         }
 
         private static void AskForNewMessage()
